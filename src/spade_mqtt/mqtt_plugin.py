@@ -326,7 +326,7 @@ class MqttComponent:
         """Asynchronously receive a message from a topic"""
         return await self.queues.get_msg(topic)
 
-    async def unsubscribe(self, topic_name: str, client_id):
+    async def unsubscribe(self, topic_name: str, client_id = 0):
         """
         Unsubscribe from a topic.
 
