@@ -1,0 +1,38 @@
+[build-system]
+ requires = ["hatchling >= 1.26", "versioningit"]
+ build-backend = "hatchling.build"
+
+[project]
+ name = "spade_mqtt"
+ packages = ["spade_mqtt"]
+ description = "MQTT mixin for spade, enabling agents to pub/sub to MQTT topics."
+ readme = "README.md"
+ dependencies = [
+    "spade>=4.1.2",
+    "paho-mqtt>=2.1.0"
+ ]
+ version="0.5"
+
+[project.optional-dependencies]
+  dev = [
+    "black",
+    "ruff"
+  ]
+  test = [
+    "pytest",
+    "pytest-cov",
+    "testcontainers"
+  ]
+
+[tool.hatch.build.targets.sdist]
+ ignore-vcs = false
+ 
+[tool.hatch.version]
+ source="versioningit"
+
+[tool.ruff]
+ line-length = 93
+
+[tool.pytest.ini_options]
+ testpaths = ["tests"]
+ addopts = "-ra"
