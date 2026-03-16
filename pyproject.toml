@@ -11,7 +11,7 @@
     "spade>=4.1.2",
     "paho-mqtt>=2.1.0"
  ]
- version="0.5"
+  version="0.6"
 
 [project.optional-dependencies]
   dev = [
