@@ -14,14 +14,18 @@ class PingReply(spade.behaviour.CyclicBehaviour):
 
 
 class Ping(spade.behaviour.PeriodicBehaviour):
-    replied: list[bool] = []
-    sent_date: list[dt] = []
-    delay: list[timedelta|None] = []
-    ping_num = 0
+    replied: list[bool]
+    sent_date: list[dt]
+    delay: list[timedelta|None]
+    ping_num: int
 
     def __init__(self, period, to):
         super().__init__(period=period)
         self.to = to
+        self.replied = []
+        self.sent_date = []
+        self.delay = []
+        self.ping_num = 0
 
     async def run(self) -> None:
         assert self.agent

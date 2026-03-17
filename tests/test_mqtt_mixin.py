@@ -10,7 +10,7 @@ class MQTTSub(spade.behaviour.CyclicBehaviour):
     received = 0
 
     def __init__(
-        self, parent: "TestSubAgent", topic, limit: int | float = float("inf")
+        self, parent: "MqttSubAgent", topic, limit: int | float = float("inf")
     ):
         super().__init__()
         self.parent = parent
@@ -34,15 +34,16 @@ class MQTTSub(spade.behaviour.CyclicBehaviour):
     async def on_end(self) -> None:
         assert self.agent and self.agent.mqtt
         # this fails
-        # await self.agent.mqtt.unsubscribe(self.topic)
+        await self.agent.mqtt.unsubscribe(self.topic)
+        await self.agent.mqtt.disconnect()
 
 
-class TestSubAgent(MqttMixin, spade.agent.Agent):
-    sub_bh: list[MQTTSub] = []
+class MqttSubAgent(MqttMixin, spade.agent.Agent):
+    sub_bh: list[MQTTSub]
     connect_done = False
     mqtt_port: int
     mqtt_host: str
-    received: dict[str, list] = {}
+    received: dict[str, list]
 
     def __init__(
         self,
@@ -57,6 +58,8 @@ class TestSubAgent(MqttMixin, spade.agent.Agent):
         self.mqtt_host = mqtt_host
         self.mqtt_port = mqtt_port
         self.topics = topics
+        self.sub_bh = []
+        self.received = {}
 
     async def setup(self) -> None:
         self.add_behaviour(PingReply())
@@ -108,8 +111,11 @@ def test_basic_agent_start(spade_broker):
                 break
         assert t1.prop
         success = True
+        await asyncio.sleep(1)
 
     host, port = spade_broker
+
+    spade.container.Container().reset()  # type: ignore
     spade.run(start_ag1(host, port))
     assert success
 
@@ -124,7 +130,7 @@ def test_sub_one(spade_broker, mosquitto_container):
     async def start_ag1(xmpp_host, xmpp_port, mqtt_host, mqtt_port, pub_fn):
         """Launch one testing agent."""
         nonlocal success
-        t1 = TestSubAgent(
+        t1 = MqttSubAgent(
             "test1@" + xmpp_host,
             "pwd",
             mqtt_host,
@@ -158,6 +164,8 @@ def test_sub_one(spade_broker, mosquitto_container):
     host, port = spade_broker
     mqtt_host, mqtt_port, fn = mosquitto_container
     success = False
+    # Reset spade container (because previous test closed the event loop)
+    spade.container.Container().reset()  # type: ignore
     spade.run(
         start_ag1(
             xmpp_host=host,
@@ -165,7 +173,8 @@ def test_sub_one(spade_broker, mosquitto_container):
             mqtt_host=mqtt_host,
             mqtt_port=mqtt_port,
             pub_fn=fn,
-        )
+        ),
+        embedded_xmpp_server=False
     )
     assert success
 
@@ -176,7 +185,7 @@ def test_sub_wildcard(spade_broker, mosquitto_container):
     async def start_ag1(xmpp_host, xmpp_port, mqtt_host, mqtt_port, pub_fn):
         """Launch one testing agent."""
         nonlocal success
-        t1 = TestSubAgent(
+        t1 = MqttSubAgent(
             "test1@" + xmpp_host,
             "pwd",
             mqtt_host,
@@ -190,7 +199,7 @@ def test_sub_wildcard(spade_broker, mosquitto_container):
             "pinger@" + xmpp_host, "pwd", "test1@" + xmpp_host, period=1, port=xmpp_port
         )
         await pinger.start(auto_register=True)
-        assert len(t1.sub_bh) == 1
+        assert len(t1.sub_bh) == 1, "more than one behaviour in agent"
         assert t1.sub_bh[0]
         assert t1.connect_done
         await pub_fn(5, "test/topic1", "hello1")
@@ -210,6 +219,8 @@ def test_sub_wildcard(spade_broker, mosquitto_container):
     host, port = spade_broker
     mqtt_host, mqtt_port, fn = mosquitto_container
     success = False
+    # Reset spade container (because previous test closed the event loop)
+    spade.container.Container().reset()  # type: ignore
     spade.run(
         start_ag1(
             xmpp_host=host,
