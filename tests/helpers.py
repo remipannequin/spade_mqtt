@@ -47,7 +47,7 @@ class Ping(spade.behaviour.PeriodicBehaviour):
 
     def all_received(self):
         """Check if all ping requests have been replied"""
-        return all(self.replied)
+        return all(self.replied[:-1])
 
     def average_delay(self):
         """Get the average delay in microseconds"""
