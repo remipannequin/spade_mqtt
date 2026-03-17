@@ -1,15 +1,19 @@
 """Spade plugin to communicate over MQTT. Heavily inspired by aiomqtt."""
 
-from typing import Any
 import asyncio
 
 
 import paho.mqtt.client as mqtt
 from loguru import logger
 
-from paho.mqtt.properties import Properties, PacketTypes
+from paho.mqtt.properties import Properties
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.enums import CallbackAPIVersion, MQTTErrorCode
 from paho.mqtt.reasoncodes import ReasonCode
 from paho.mqtt.client import topic_matches_sub
+
+# timeout when waiting for mqtt acknoledgement (in seconds)
+ACK_TIMEOUT = 5
 
 
 class MqttQueues:
@@ -69,7 +73,7 @@ class MqttQueues:
         self._pending_publish[mid] = asyncio.Event()
         return asyncio.create_task(self._pending_publish[mid].wait(), name="published")
 
-    def publish_done(self, key: int) -> None:
+    def publish_done(self, key: int):
         """Set the event corresponding to a publish, and remove it from the
         pending publish"""
         if key in self._pending_publish:
@@ -83,13 +87,12 @@ class MqttQueues:
             self._pending_subscribe[mid].wait(), name="subscribed"
         )
 
-    def subscribe_done(self, key: int) -> None:
+    def subscribe_done(self, key: int):
         """Set the event corresponding to this subscription, and remove it
         from the pending subscriptions."""
         if key in self._pending_subscribe:
             ev = self._pending_subscribe.pop(key)
             self._loop.call_soon_threadsafe(ev.set)
-            ev.set()
 
     def unsubcribe_start(self, mid: int) -> asyncio.Task:
         """Create a new event, and wait for it."""
@@ -98,7 +101,7 @@ class MqttQueues:
             self._pending_unsubscribe[mid].wait(), name="unsubscribed"
         )
 
-    def unsubscribe_done(self, key: int) -> None:
+    def unsubscribe_done(self, key: int):
         """Set the event corresponding to this subscription, and remove it from the
         pending subscriptions."""
         if key in self._pending_unsubscribe:
@@ -136,8 +139,6 @@ class MqttQueues:
 
 
 # MQTT callbacks
-
-
 def on_mqtt_connect(
     client: mqtt.Client, userdata: MqttQueues, _flags, reason_code, _properties
 ):
@@ -210,13 +211,18 @@ def on_mqtt_publish(
 class MqttMixinError(BaseException):
     """Exceptions generated from the mqtt mixin"""
 
-    def __init__(self, rc: int | None, *args: Any):
-        super().__init__(*args)
-        self.rc = rc
+    def __init__(self, message: str, reason: ReasonCode | None = None, error: MQTTErrorCode | None = None):
+        super().__init__(message)
+        self.rc = reason
+        self.ec = error
 
     def __str__(self):
-        return f"[code:{self.rc.value}] {self.rc!s}"
-
+        base = super().__str__()
+        if self.rc:
+            base += f"[reason:{self.rc.value}] {self.rc!s}"
+        if self.ec:
+            base += f"[error:{self.ec.value}] {self.ec!s}"
+        return base
 
 class MqttMixin:
     """
@@ -226,33 +232,33 @@ class MqttMixin:
 
     async def _hook_plugin_after_connection(self, *args, **kwargs):
         try:
-            await super()._hook_plugin_after_connection(*args, **kwargs)
+            await super()._hook_plugin_after_connection(*args, **kwargs) # type: ignore
         except AttributeError:
             logger.debug("_hook_plugin_after_connection is undefined")
-        # create a new mqtt client
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
         # add an instance of the mqtt component to the agent
-        self.mqtt = MqttComponent(client)
+        self.mqtt = MqttComponent()
 
     async def _hook_plugin_before_connection(self, *args, **kwargs):
         """
         Overload this method to hook a plugin before connetion is done
         """
         try:
-            await super()._hook_plugin_before_connection(*args, **kwargs)
+            await super()._hook_plugin_before_connection(*args, **kwargs) # type: ignore
         except AttributeError:
             logger.debug("_hook_plugin_before_connection is undefined")
 
 
 class MqttComponent:
     """Mqtt client wrapper."""
-
-    def __init__(self, client: mqtt.Client):
-        self.clients = [client]
+    
+    def __init__(self):
         self.queues = MqttQueues(asyncio.get_event_loop())
-        self.init_client(client)
+        self.clients = []
+        # create a new mqtt client
+        self.add_client()
 
     def init_client(self, client):
+        self.clients.append(client)
         client.on_connect = on_mqtt_connect
         client.on_disconnect = on_mqtt_disconnect
         client.on_message = on_mqtt_message
@@ -263,8 +269,7 @@ class MqttComponent:
 
     def add_client(self):
         """create a new mqtt client and append it to the list of clients"""
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
-        self.clients.append(client)
+        client = mqtt.Client(CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
         self.init_client(client)
         return client
 
@@ -294,7 +299,7 @@ class MqttComponent:
         for client in self.clients:
             client.disconnect()
             disconnected_task = self.queues.disconnect_start()
-            await asyncio.wait_for(disconnected_task, timeout=5)
+            await asyncio.wait_for(disconnected_task, timeout=ACK_TIMEOUT)
             client.loop_stop()
 
     def is_connected(self, client_id=0):
@@ -316,16 +321,19 @@ class MqttComponent:
             logger.debug(f"subscribing to topic {topic_name}")
             result, mid = self.clients[client_id].subscribe(topic_name)
             if result != mqtt.MQTT_ERR_SUCCESS or mid is None:
-                raise MqttMixinError(result, "Could not subscribe to topic")
+                raise MqttMixinError("Could not subscribe to topic", error=result)
 
             subscribed_task = self.queues.subcribe_start(mid)
-            await asyncio.wait_for(subscribed_task, timeout=30)
+            await asyncio.wait_for(subscribed_task, timeout=ACK_TIMEOUT)
         else:
             raise MqttMixinError("Could not subscribe to topic: not connected")
 
     async def receive(self, topic):
         """Asynchronously receive a message from a topic"""
-        return await self.queues.get_msg(topic)
+        try:
+            return await self.queues.get_msg(topic)
+        except MqttMixinError as e:
+            raise e
 
     async def unsubscribe(self, topic_name: str, client_id = 0):
         """
@@ -340,7 +348,7 @@ class MqttComponent:
             if result != mqtt.MQTT_ERR_SUCCESS or mid is None:
                 raise MqttMixinError("Could not unsubscribe from topic")
             unsubscribed_task = self.queues.unsubcribe_start(mid)
-            await asyncio.wait_for(unsubscribed_task, timeout=5)
+            await asyncio.wait_for(unsubscribed_task, timeout=ACK_TIMEOUT)
             self.queues.del_topic(topic_name)
         else:
             logger.error(f"Error unsubscribing from topic {topic_name}")
@@ -372,9 +380,13 @@ class MqttComponent:
         )
         # Early out on error
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
-            raise MqttMixinError(info.rc, "Could not publish message")
+            raise MqttMixinError("Could not publish message", error=info.rc)
         # Early out on immediate success
         if info.is_published():
             return
         pub_task = self.queues.publish_start(info.mid)
-        await asyncio.wait_for(pub_task, timeout=5)
+        try:
+            await asyncio.wait_for(pub_task, timeout=ACK_TIMEOUT)
+            logger.debug(f"published {payload} to {topic}")
+        except TimeoutError:
+            raise MqttMixinError(f"No PubAck received after timeout ({ACK_TIMEOUT} seconds)")
