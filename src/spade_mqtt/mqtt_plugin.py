@@ -123,6 +123,7 @@ class MqttQueues:
             return await self._msg_queues[topic].get()
         else:
             logger.error(f"Must subscribe to topic {topic} first")
+            return None
 
     def add_topic(self, topic):
         """Add a topic in the message queues"""
