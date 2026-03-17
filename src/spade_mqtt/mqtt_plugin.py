@@ -74,7 +74,7 @@ class MqttQueues:
         pending publish"""
         if key in self._pending_publish:
             ev = self._pending_publish.pop(key)
-            ev.set()
+            self._loop.call_soon_threadsafe(ev.set)
 
     def subcribe_start(self, mid: int) -> asyncio.Task:
         """Create a new event, and wait for it."""
