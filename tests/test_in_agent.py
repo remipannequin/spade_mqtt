@@ -233,6 +233,9 @@ def test_sub_wildcard(spade_broker, mosquitto_container):
     assert success
 
 
+
+
+
 # Test 3: same as one, but with two brokers
 
 # Test 4: agent publish on a defined topic
