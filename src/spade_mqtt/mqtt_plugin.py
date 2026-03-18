@@ -275,16 +275,19 @@ class MqttComponent:
 
     async def connect(
         self, broker, timeout, username=None, password=None, append=False, **kwargs
-    ):
+    ) -> int:
         """Connect to the MQTT broker (and start the loop). If another
-        connection is done, create a new client and a new event loop"""
+        connection is done, create a new client and a new event loop.
+        Return the client id."""
         if not append and self.clients[0].is_connected():
             raise RuntimeWarning("warning, client already connected")
         elif append:
             # try creating a new client and event loop
             client = self.add_client()
+            client_id = len(self.clients) - 1
         else:
             client = self.clients[0]
+            client_id = 0
         client.username = username
         client.password = password
         logger.debug(f" connecting to {broker}...")
@@ -293,6 +296,8 @@ class MqttComponent:
         client.loop_start()
         if self.queues.has_pending_connect():
             await asyncio.wait_for(connected_task, timeout=timeout)
+        return client_id
+        
 
     async def disconnect(self):
         """Disconnect from the MQTT broker (and stop the loop)"""
