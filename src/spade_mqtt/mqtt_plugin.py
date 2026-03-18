@@ -371,7 +371,7 @@ class MqttComponent:
         topic: str,
         payload: str,
         qos=0,
-        properties=None,
+        properties: dict[str, str] | None = None,
         retain=False,
         client_id=0,
     ):
