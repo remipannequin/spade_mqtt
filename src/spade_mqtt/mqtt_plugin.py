@@ -152,7 +152,10 @@ def on_mqtt_connect(
         # sure our subscribed is persisted across reconnections.
         userdata.connect_done()
         logger.debug("connected.")
-        for topic in userdata.topic_list():
+        # topic_list() can change size during iteration
+        # so a copy is made
+        existing_subs = list(userdata.topic_list())
+        for topic in existing_subs:
             client.subscribe(topic)
 
 
