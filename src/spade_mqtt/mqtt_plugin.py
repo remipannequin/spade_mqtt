@@ -10,7 +10,7 @@ from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.enums import CallbackAPIVersion, MQTTErrorCode
 from paho.mqtt.reasoncodes import ReasonCode
-from paho.mqtt.client import topic_matches_sub
+from paho.mqtt.client import topic_matches_sub, MQTTMessage
 
 # timeout when waiting for mqtt acknoledgement (in seconds)
 ACK_TIMEOUT = 5
@@ -120,13 +120,14 @@ class MqttQueues:
                 f"Warning: message on topic {message.topic} did not match any subscription"
             )
 
-    async def get_msg(self, topic):
+    async def get_msg(self, topic) -> MQTTMessage:
         """Wait for a message to arrive on a subscribed topic"""
         if topic in self._msg_queues:
             return await self._msg_queues[topic].get()
         else:
+            # TODO subscribe to topic first
             logger.error(f"Must subscribe to topic {topic} first")
-            return None
+            raise RuntimeWarning(f"Must subscribe to topic {topic} first")
 
     def add_topic(self, topic):
         """Add a topic in the message queues"""
@@ -302,8 +303,10 @@ class MqttComponent:
         return client_id
         
 
-    async def disconnect(self):
-        """Disconnect from the MQTT broker (and stop the loop)"""
+    async def disconnect(self,):
+        """Disconnect from the MQTT broker (and stop its loop).
+        in case of multiple clients, they are all disconnected.
+        """
         for client in self.clients:
             client.disconnect()
             disconnected_task = self.queues.disconnect_start()
@@ -336,8 +339,9 @@ class MqttComponent:
         else:
             raise MqttMixinError("Could not subscribe to topic: not connected")
 
-    async def receive(self, topic):
-        """Asynchronously receive a message from a topic"""
+    async def receive(self, topic) -> MQTTMessage:
+        """Asynchronously receive a message from a topic. If multiple connections exists
+        return a message matching the topic received on any connection."""
         try:
             return await self.queues.get_msg(topic)
         except MqttMixinError as e:
