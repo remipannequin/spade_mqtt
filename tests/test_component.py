@@ -65,8 +65,16 @@ async def test_sub_fail(mosquitto_container):
     host, port, pub_fn = mosquitto_container
     await c.connect(broker=host, port=port, timeout=2)
     # a warning is displayed, None is returned
-    m = await c.receive("test/topic1")
-    assert m is None
+    with pytest.raises(RuntimeWarning):
+        await c.receive("test/topic1")
+
+
+@pytest.mark.asyncio
+async def test_sub_fail2():
+    c = MqttComponent()
+    # a warning is displayed
+    with pytest.raises(RuntimeWarning):
+        await c.receive("test/topic1")
 
 
 @pytest.mark.asyncio
@@ -94,6 +102,25 @@ async def test_pub(mosquitto_container):
     m = await c.receive("test/topic1")
     assert m
     assert m.payload == b"hello1"
+    await c.unsubscribe("test/topic1")
+    await c.disconnect()
+
+@pytest.mark.asyncio
+async def test_pub_prop(mosquitto_container):
+    c = MqttComponent()
+    host, port, _ = mosquitto_container
+    await c.connect(broker=host, port=port, timeout=3)
+    await c.subscribe("test/topic1")
+    await c.publish("test/topic1", "hello1", properties={"p1": "1", "p2": "string"})
+    await asyncio.sleep(1)
+    m = await c.receive("test/topic1")
+    assert m
+    assert m.payload == b"hello1"
+    assert m.properties and m.properties.UserProperty # type: ignore
+    d = dict(m.properties.UserProperty) # type: ignore
+    assert "p1" in d and "p2" in d
+    assert d["p1"] == "1"
+    assert d["p2"] == "string"
     await c.unsubscribe("test/topic1")
     await c.disconnect()
 

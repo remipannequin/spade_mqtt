@@ -1,7 +1,7 @@
 import asyncio
 
 import spade
-from spade_mqtt.mqtt_plugin import MqttMixin
+from spade_mqtt import MqttMixin
 from helpers import PingerAgent, PingReply
 
 
@@ -105,10 +105,7 @@ def test_basic_agent_start(spade_broker):
         await t1.start(auto_register=True)  # use host and port
         assert t1.test_bh
         while not t1.test_bh.is_killed():
-            try:
-                await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                break
+            await asyncio.sleep(1)
         assert t1.prop
         success = True
         await asyncio.sleep(1)
@@ -150,15 +147,12 @@ def test_sub_one(spade_broker, mosquitto_container):
         await pub_fn(5, "test/topic1", "hello1")
         await pub_fn(5, "test/topic1", "hello2")
         while not t1.sub_bh[0].is_killed():
-            try:
-                await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                break
+            await asyncio.sleep(1)
         assert len(t1.received["test/topic1"]) == 2
         assert t1.received["test/topic1"][0].payload == b"hello1"
         assert t1.received["test/topic1"][1].payload == b"hello2"
         assert pinger.all_replied()
-
+        assert pinger.max_delay() < 10000  # 10 ms
         success = True
 
     host, port = spade_broker
@@ -205,14 +199,12 @@ def test_sub_wildcard(spade_broker, mosquitto_container):
         await pub_fn(5, "test/topic1", "hello1")
         await pub_fn(5, "test/topic1", "hello2")
         while not t1.sub_bh[0].is_killed():
-            try:
-                await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                break
+            await asyncio.sleep(1)
         assert len(t1.received["test/#"]) == 2
         assert t1.received["test/#"][0].payload == b"hello1"
         assert t1.received["test/#"][1].payload == b"hello2"
         assert pinger.all_replied()
+        assert pinger.max_delay() < 10000  # 10 ms
 
         success = True
 

@@ -49,10 +49,10 @@ class Ping(spade.behaviour.PeriodicBehaviour):
         """Check if all ping requests have been replied"""
         return all(self.replied[:-1])
 
-    def average_delay(self):
-        """Get the average delay in microseconds"""
+    def max_delay(self):
+        """Get the max delay in microseconds"""
         valid_delays = [d.microseconds for d in self.delay if d]
-        return sum(valid_delays) / len(valid_delays)
+        return max(valid_delays)
 
 
 class PingWaitReply(spade.behaviour.CyclicBehaviour):
@@ -86,4 +86,5 @@ class PingerAgent(spade.agent.Agent):
     def all_replied(self) -> bool:
         return self.ping_bh.all_received()
     
-
+    def max_delay(self) -> float:
+        return self.ping_bh.max_delay()
