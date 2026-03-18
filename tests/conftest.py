@@ -26,6 +26,23 @@ def mosquitto_container():
 
 
 @pytest.fixture(scope="session")
+def mosquitto_container2():
+    container = DockerContainer("eclipse-mosquitto").with_exposed_ports(1883)
+    container.start()
+
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(1883)
+
+    async def delayed_pub(delay, topic, payload):
+        await asyncio.sleep(delay)
+        container.exec(["mosquitto_pub", "-h", "localhost", "-t", topic, "-m", payload])
+
+    yield host, port, delayed_pub
+
+    container.stop()
+
+
+@pytest.fixture(scope="session")
 def spade_broker():
     print("Starting spade XMPP server")
     proc = subprocess.Popen(["spade", "run", "--host", "127.0.0.1", "--memory"])
